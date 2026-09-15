@@ -64,6 +64,12 @@ training:
   no_play: false
   sim2sim_strict: true
   play_render_mode: auto
+  play_renderer: native
+  play_visual_preset: model
+  play_shadows: true
+  play_reflections: true
+  viser_host: 127.0.0.1
+  viser_port: 8080
   export_onnx: true
   play_env_num: 16
   play_steps: 800

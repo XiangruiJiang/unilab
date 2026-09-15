@@ -244,3 +244,4 @@ class ActionManager(ManagerBase):
                 )
             self._term_names.append(term_name)
             self._terms[term_name] = term
+            self._checkpoint_terms[term_name] = term

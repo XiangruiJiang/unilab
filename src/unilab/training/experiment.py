@@ -10,12 +10,15 @@ import os
 import socket
 import subprocess
 import time
+import warnings
+from collections.abc import Callable
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 from omegaconf import OmegaConf
 
+from unilab.training.checkpoint import decode_environment_state, encode_environment_state
 from unilab.utils.device import get_device_info_dict
 from unilab.utils.sim2sim import extract_contract_snapshot
 
@@ -482,6 +485,22 @@ def patch_rsl_rl_wandb_writer() -> None:
     setattr(wandb_utils, "_UNILAB_PATCHED", True)
 
 
+def bind_rsl_rl_environment_state(
+    runner: Any, env: Any, *, reset: Callable[[], Any] | None = None
+) -> None:
+    """Opt a training runner into the explicit environment checkpoint protocol.
+
+    Bind the owner environment after runner construction and before resume.
+    Playback runners are never bound, so task state cannot overwrite play
+    settings or fail because playback uses fewer environments/different clips.
+    """
+    export = getattr(env, "state_dict", None)
+    restore = getattr(env, "load_state_dict", None)
+    if callable(export) and callable(restore):
+        runner._unilab_checkpoint_env = env
+        runner._unilab_checkpoint_reset = reset
+
+
 def patch_rsl_rl_resume_state() -> None:
     """Persist + restore ``Logger.tot_time`` / ``tot_timesteps`` across resume.
 
@@ -492,8 +511,9 @@ def patch_rsl_rl_resume_state() -> None:
     every resumed run and visually overlap the original segment. See issue #441.
 
     The patch wraps ``OnPolicyRunner.save`` / ``OnPolicyRunner.load`` to round-trip
-    a ``unilab_logger_state`` key in the saved dict. Legacy checkpoints (without
-    the key) load unchanged.
+    a ``unilab_logger_state`` key in the saved dict. Explicitly bound training
+    environments also round-trip ``unilab_env_state``. Legacy checkpoints load
+    with a warning when environment state is unavailable.
     """
     try:
         from rsl_rl.runners.on_policy_runner import OnPolicyRunner
@@ -513,6 +533,9 @@ def patch_rsl_rl_resume_state() -> None:
             "tot_time": float(getattr(self.logger, "tot_time", 0.0)),
             "tot_timesteps": int(getattr(self.logger, "tot_timesteps", 0)),
         }
+        env = getattr(self, "_unilab_checkpoint_env", None)
+        if env is not None:
+            saved_dict["unilab_env_state"] = encode_environment_state(env.state_dict())
         torch.save(saved_dict, path)
         self.logger.save_model(path, self.current_learning_iteration)
 
@@ -531,6 +554,21 @@ def patch_rsl_rl_resume_state() -> None:
         if state is not None:
             self.logger.tot_time = float(state.get("tot_time", 0.0))
             self.logger.tot_timesteps = int(state.get("tot_timesteps", 0))
+        env = getattr(self, "_unilab_checkpoint_env", None)
+        if load_iteration and env is not None:
+            env_state = loaded_dict.get("unilab_env_state")
+            if env_state is None:
+                warnings.warn(
+                    "Legacy checkpoint has no environment state; sampling caches, curriculum "
+                    "and environment progress start from their initialized values.",
+                    UserWarning,
+                    stacklevel=2,
+                )
+            else:
+                env.load_state_dict(decode_environment_state(env_state))
+                reset = getattr(self, "_unilab_checkpoint_reset", None)
+                if reset is not None:
+                    reset()
         return loaded_dict["infos"]
 
     OnPolicyRunner.save = _patched_save  # type: ignore[assignment]

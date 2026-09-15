@@ -47,8 +47,33 @@ UniLab owns：
 - runner、learner、checkpoint、sim2sim、robot asset registry、task XML/scene composition；
 - 将 task-owned scene、DR、dtype/config 翻译为 UniSim 输入的 adapter layer。
 
-`unisim` 不得 import UniLab、Hydra、Torch、Gymnasium、RSL-RL、训练脚本或 task code。
+`unisim` 不得 import UniLab、Hydra、Gymnasium、RSL-RL、训练脚本或 task code。
+Core imports do not require Torch; the explicitly requested device-session adapter
+may lazily import Torch for tensor interoperability, as described below.
 UniLab env/manager 不得访问 engine model/data/private runtime。
+
+### Optional device tensor sessions (2026-09-15)
+
+`SimBackend.supports_device_tensors` declares whether the backend offers an
+exclusive `device_session()` context. `NpEnv` forwards these declared public
+capabilities without inspecting backend-private model or data objects. Unsupported
+backends reject the session explicitly.
+
+The adapter owns device state/control views, step execution, stream ordering and
+host-cache refresh on context exit. Within the context, consumers use the
+session's state and tensor control interface. Normal host stepping, resetting
+and Python control callbacks must not execute concurrently with that session.
+Observation, reward, termination and reset policy remain the consumer's
+responsibility; this API does not turn existing NumPy manager terms or training
+runners into device-native implementations.
+
+The optional adapter can expose Torch views over backend-owned device buffers.
+Torch remains lazily imported at this boundary, and a device session adds no
+dependency on UniLab, a task package or a learning algorithm. Borrowed state
+views are scoped to the session; exiting restores the ordinary host lifecycle.
+
+Evidence: `src/unilab/base/np_env.py` delegates to `unisim.backend.base.SimBackend`;
+the adapter implementation and device-session checks belong to UniSim.
 
 ### Migration and final state
 

@@ -480,6 +480,60 @@ def test_training_progress_restore_survives_next_step_and_rejects_invalid_state(
     env.close()
 
 
+class _PersistentCommand(_Command):
+    def __init__(self, cfg, env):
+        super().__init__(cfg, env)
+        self.sampling_cache = np.zeros((3, 4), dtype=np.float32)
+
+    def state_dict(self):
+        return {"sampling_cache": self.sampling_cache}
+
+    def load_state_dict(self, state):
+        self.sampling_cache[:] = state["sampling_cache"]
+
+
+@dataclass(kw_only=True)
+class _PersistentCommandCfg(_CommandCfg):
+    def build(self, env):
+        return _PersistentCommand(self, env)
+
+
+def test_environment_checkpoint_restores_manager_cache_progress_and_rng():
+    cfg = _make_cfg()
+    cfg.commands = {"target": _PersistentCommandCfg(resampling_time_range=(1.0, 1.0))}
+    env, _ = _make_env(cfg)
+    env.reset()
+    term = env.command_manager.get_term("target")
+    term.sampling_cache[:] = 3.5
+    env.import_training_state({"version": 1, "step_counter": 123})
+    state = env.state_dict()
+    expected_rng = env.rng.random(5)
+    term.sampling_cache[:] = 0
+    env.import_training_state({"version": 1, "step_counter": 0})
+    # A saved snapshot must not alias the live term's sampling cache.
+    assert np.all(state["managers"]["command_manager"]["target"]["sampling_cache"] == 3.5)
+    env.load_state_dict(state)
+    assert np.all(term.sampling_cache == 3.5)
+    np.testing.assert_array_equal(env.rng.random(5), expected_rng)
+    assert env.step_counter == env.common_step_counter == 123
+    env.step(np.zeros((env.num_envs, 1), dtype=np.float32))
+    assert env.common_step_counter == 124
+    env.close()
+
+
+def test_environment_checkpoint_rejects_unknown_version_or_removed_terms():
+    env, _ = _make_env()
+    state = env.state_dict()
+    state["version"] = True
+    with pytest.raises(ValueError, match="checkpoint version"):
+        env.load_state_dict(state)
+    state["version"] = 1
+    state["managers"] = {"command_manager": {"removed": {"progress": 1}}}
+    with pytest.raises(ValueError, match="cannot restore checkpoint term 'removed'"):
+        env.load_state_dict(state)
+    env.close()
+
+
 def _make_state_env(
     *,
     commands: dict[str, CommandTermCfg | None] | None = None,

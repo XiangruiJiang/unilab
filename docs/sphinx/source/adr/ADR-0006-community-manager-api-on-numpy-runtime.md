@@ -68,6 +68,40 @@ masked fields, immutable cold defaults, mocap commit order and abort, entity-loc
 column mapping, and restore followed by an actual control step. The governing
 package boundary remains [ADR-0007](ADR-0007-unisim-extraction-boundary.md).
 
+### Persistent manager checkpoints (2026-09-15)
+
+`ManagerTermBase.state_dict()` / `load_state_dict()` provide an opt-in boundary
+for persistent curriculum and sampling state. Managers register concrete terms
+when constructing them and aggregate their nonempty payloads by configured name;
+observation terms include their group in the name. Stateless terms return an
+empty mapping. Removed or unsupported saved terms fail resume explicitly.
+
+`ManagerBasedRlEnv.state_dict()` combines those manager payloads with the existing
+authoritative training-progress export and the environment's sampling RNG.
+It excludes physics and transient episode buffers. The existing JSON-only
+`export_training_state()` protocol remains unchanged. Task hooks validate their
+own data identity, configuration and array layout; arbitrary user hooks are not
+a transaction, so any import error must abort resume.
+
+The existing RSL-RL resume adapter accepts an explicitly bound environment in
+training and stores `unilab_env_state` beside logger and algorithm state. The
+training entrypoint binds this owner before loading and resets fresh episodes
+after restoring persistent state. Playback has no bound environment provider,
+and policy-only loads skip restoration. Legacy checkpoints without this payload
+remain loadable with a warning that environment progress and curriculum were
+not restored. This adapter does not add a UniLab dependency to UniRL.
+
+`training/checkpoint.py` encodes NumPy arrays as tagged CPU tensors and decodes
+them before invoking environment hooks. This keeps policy checkpoints readable
+with `torch.load(weights_only=True)` and rejects simulator objects. Native
+tensors are detached onto CPU; task hooks own any device placement on restore.
+
+Regression evidence: `tests/managers/test_checkpoint_state.py`,
+`tests/envs/test_manager_based_rl_env.py`, and
+`tests/training/test_resume_logger_state.py` cover detached snapshots, grouped
+term names, RNG/progress restoration followed by a control step, legacy and
+policy-only loads, fresh-reset ordering, and weights-only loading.
+
 ### 1. Source-aligned public surface
 
 `src/unilab/managers/` 按 pinned mjlab package 的模块职责和 exports 直接迁移。以下名称

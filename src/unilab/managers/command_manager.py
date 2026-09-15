@@ -278,6 +278,7 @@ class CommandManager(ManagerBase):
                     f"Returned object for the term {term_name} is not of type CommandType."
                 )
             self._terms[term_name] = term
+            self._checkpoint_terms[term_name] = term
 
     def _validate_command(self, name: str, command: np.ndarray) -> np.ndarray:
         if not isinstance(command, np.ndarray):

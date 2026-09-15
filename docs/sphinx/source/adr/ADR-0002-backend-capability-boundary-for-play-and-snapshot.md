@@ -36,6 +36,31 @@ MuJoCo 与 Motrix 的渲染路径和输出形式不同。仓库当前存在两�
 
 ## Backend-Specific Capability Differences
 
+### Playback presentation extension (2026-09-15)
+
+Playback presentation is configured through `CameraCfg`, constructed by
+`src/unilab/visualization/playback.py` from the training owner configuration.
+`play_renderer`, `play_visual_preset`, `play_shadows`, `play_reflections`,
+`viser_host` and `viser_port` select presentation without changing task physics.
+The existing `play_render_mode` continues to choose interactive, recording,
+disabled or automatic playback; a renderer does not replace that mode.
+
+UniSim owns renderer creation, lifecycle and supported combinations. PPO checks
+Viser prerequisites before constructing the policy, resolves the backend play
+plan after environment construction, and rejects an invalid selected environment
+before policy export. Viser is an optional interactive renderer and requires the
+`unisim-core[viser]` extra. Native windows and offline recording retain their
+backend-specific capabilities.
+
+Reference overlays remain task-provided data under
+[ADR-0008](ADR-0008-debug-overlay-primitive-contract-and-playback-session.md).
+Backend rendering interprets ghost poses without inserting reference bodies
+into the simulated scene. Fixed-model-variant playback must select the visual
+model for the environment being displayed, under
+[ADR-0010](ADR-0010-fixed-model-variant-ownership-boundary.md).
+
+### Backend-specific output paths
+
 - MuJoCo: 具备 physics snapshot 驱动的视频导出路径。
 - Motrix: 具备交互式 renderer 路径，常见 playback 体验是窗口渲染而非视频导出。
 

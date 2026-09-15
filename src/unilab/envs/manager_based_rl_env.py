@@ -9,6 +9,7 @@ from __future__ import annotations
 import math
 import secrets
 from collections.abc import Mapping
+from copy import deepcopy
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -56,6 +57,7 @@ from unilab.managers import (
     TerminationManager,
     TerminationTermCfg,
 )
+from unilab.managers.manager_base import ManagerBase
 
 
 def _manager_terms_field() -> Any:
@@ -746,6 +748,72 @@ class ManagerBasedRlEnv(NpEnv):
         self.rng.bit_generator.state = replacement.bit_generator.state
         self._cfg.seed = seed
         return seed
+
+    def _checkpoint_managers(self) -> dict[str, ManagerBase]:
+        names = (
+            "event_manager",
+            "command_manager",
+            "action_manager",
+            "observation_manager",
+            "termination_manager",
+            "reward_manager",
+            "curriculum_manager",
+            "metrics_manager",
+            "recorder_manager",
+        )
+        return {
+            name: manager
+            for name in names
+            if isinstance(manager := getattr(self, name), ManagerBase)
+        }
+
+    def state_dict(self) -> dict[str, Any]:
+        """Snapshot persistent training state for a fresh-episode checkpoint resume.
+
+        Includes progress, sampling RNG, and opted-in manager terms. Simulator
+        state and transient episode buffers are deliberately outside this API.
+        Unlike the JSON-only ``export_training_state`` protocol, term payloads
+        may contain CPU arrays/tensors for large sampling caches.
+        """
+        managers = {}
+        for name, manager in self._checkpoint_managers().items():
+            state = manager.state_dict()
+            if state:
+                managers[name] = state
+        return {
+            "version": 1,
+            "progress": deepcopy(self.export_training_state()),
+            "rng": deepcopy(self.rng.bit_generator.state),
+            "managers": managers,
+        }
+
+    def load_state_dict(self, state: Mapping[str, Any]) -> None:
+        """Restore persistent state; callers must abort resume on any load error.
+
+        Term-specific compatibility is checked by each term. This is not a
+        transaction across arbitrary user hooks and does not restore physics.
+        """
+        required = {"version", "progress", "rng", "managers"}
+        if not isinstance(state, Mapping) or set(state) != required:
+            raise ValueError(
+                "ManagerBasedRlEnv checkpoint requires version, progress, rng, managers"
+            )
+        if type(state["version"]) is not int or state["version"] != 1:
+            raise ValueError("Unsupported ManagerBasedRlEnv checkpoint version")
+        managers = self._checkpoint_managers()
+        saved_managers = state["managers"]
+        if not isinstance(saved_managers, Mapping):
+            raise TypeError("Checkpoint managers must be a mapping")
+        unknown = set(saved_managers) - managers.keys()
+        if unknown:
+            raise ValueError(f"Cannot restore unavailable checkpoint managers: {sorted(unknown)}")
+        # Preflight RNG compatibility before invoking stateful user hooks.
+        rng = deepcopy(self.rng)
+        rng.bit_generator.state = deepcopy(state["rng"])
+        self.import_training_state(state["progress"])
+        for name, payload in saved_managers.items():
+            managers[name].load_state_dict(payload)
+        self.rng.bit_generator.state = rng.bit_generator.state
 
     def import_training_state(self, state: Mapping[str, Any]) -> None:
         """Restore the authoritative counter and its manager-derived counters."""

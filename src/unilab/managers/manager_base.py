@@ -5,9 +5,10 @@ from __future__ import annotations
 
 import abc
 import inspect
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
+from copy import deepcopy
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
 
@@ -96,12 +97,28 @@ class ManagerTermBase:
         """Returns the value of the term required by the manager."""
         raise NotImplementedError
 
+    def state_dict(self) -> dict[str, Any]:
+        """Export persistent training state, such as curriculum or sampling history.
+
+        Terms opt in by overriding this method and ``load_state_dict``. Do not
+        include simulator handles or episode buffers: resume starts fresh episodes.
+        Payloads must contain checkpoint-serializable CPU data. Validate task/data
+        compatibility in ``load_state_dict`` before changing the term's state.
+        """
+        return {}
+
+    def load_state_dict(self, state: Mapping[str, Any]) -> None:
+        """Restore an opted-in term's persistent state. Stateless terms accept {}."""
+        if state:
+            raise ValueError(f"{type(self).__name__} does not support checkpoint state")
+
 
 class ManagerBase(abc.ABC):
     """Base class for all managers."""
 
     def __init__(self, env: ManagerBasedRlEnv):
         self._env = env
+        self._checkpoint_terms: dict[str, Any] = {}
 
         self._prepare_terms()
 
@@ -122,6 +139,35 @@ class ManagerBase(abc.ABC):
         """Resets the manager and returns logging info for the current step."""
         del env_ids  # Unused.
         return {}
+
+    def state_dict(self) -> dict[str, Any]:
+        """Snapshot persistent state from explicitly registered, stateful terms."""
+        state = {}
+        for name, term in self._checkpoint_terms.items():
+            export = getattr(term, "state_dict", None)
+            if export is None:
+                continue
+            payload = export()
+            if not isinstance(payload, Mapping):
+                raise TypeError(f"{type(self).__name__} term '{name}' state must be a mapping")
+            if payload:
+                if not callable(getattr(term, "load_state_dict", None)):
+                    raise TypeError(f"{type(self).__name__} term '{name}' has no load_state_dict")
+                state[name] = deepcopy(dict(payload))
+        return state
+
+    def load_state_dict(self, state: Mapping[str, Any]) -> None:
+        """Restore named terms; reject removed or incompatible checkpoint terms."""
+        if not isinstance(state, Mapping):
+            raise TypeError(f"{type(self).__name__} checkpoint state must be a mapping")
+        for name, payload in state.items():
+            term = self._checkpoint_terms.get(name)
+            if term is None or not callable(getattr(term, "load_state_dict", None)):
+                raise ValueError(f"{type(self).__name__} cannot restore checkpoint term '{name}'")
+            if not isinstance(payload, Mapping):
+                raise TypeError(f"{type(self).__name__} term '{name}' state must be a mapping")
+        for name, payload in state.items():
+            self._checkpoint_terms[name].load_state_dict(deepcopy(dict(payload)))
 
     def _check_term_shape(self, term_name: str, value: np.ndarray) -> None:
         if not isinstance(value, np.ndarray):
@@ -157,7 +203,13 @@ class ManagerBase(abc.ABC):
     def _prepare_terms(self) -> None:
         raise NotImplementedError
 
-    def _resolve_common_term_cfg(self, term_name: str, term_cfg: ManagerTermBaseCfg) -> None:
+    def _resolve_common_term_cfg(
+        self,
+        term_name: str,
+        term_cfg: ManagerTermBaseCfg,
+        *,
+        checkpoint_name: str | None = None,
+    ) -> None:
         for param_name, value in term_cfg.params.items():
             if isinstance(value, SceneEntityCfg):
                 try:
@@ -168,4 +220,5 @@ class ManagerBase(abc.ABC):
                     )
                     raise type(exc)(message) from exc
         if inspect.isclass(term_cfg.func):
-            term_cfg.func = term_cfg.func(cfg=term_cfg, env=self._env)
+            term_cfg.func = cast(Any, term_cfg.func)(cfg=term_cfg, env=self._env)
+        self._checkpoint_terms[checkpoint_name or term_name] = term_cfg.func

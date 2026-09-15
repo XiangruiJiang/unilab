@@ -34,6 +34,12 @@ def camera_cfg_from_training(training_cfg: Any) -> CameraCfg:
             "cam_tracking_env_idx": getattr(training_cfg, "cam_tracking_env_idx", 0),
             "cam_tracking_extra_envs": getattr(training_cfg, "cam_tracking_extra_envs", 2),
             "cam_fov": getattr(training_cfg, "cam_fov", None),
+            "renderer": getattr(training_cfg, "play_renderer", "native"),
+            "visual_preset": getattr(training_cfg, "play_visual_preset", "model"),
+            "enable_shadows": getattr(training_cfg, "play_shadows", True),
+            "enable_reflections": getattr(training_cfg, "play_reflections", True),
+            "viser_host": getattr(training_cfg, "viser_host", "127.0.0.1"),
+            "viser_port": getattr(training_cfg, "viser_port", 8080),
         }
     )
 

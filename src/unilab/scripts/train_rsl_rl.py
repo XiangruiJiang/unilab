@@ -55,6 +55,7 @@ from unilab.training import (
 )
 from unilab.training.experiment import (
     ExperimentTracker,
+    bind_rsl_rl_environment_state,
     patch_rsl_rl_action_std_logging,
     patch_rsl_rl_resume_state,
     patch_rsl_rl_wandb_writer,
@@ -320,6 +321,14 @@ def _playback_debug_overlay_getter(env):
 
 def play_rsl_rl(cfg: DictConfig, device: str) -> str | None:
     """Play mode for RSL-RL."""
+    camera = camera_cfg_from_training(cfg.training)
+    if camera.renderer == "viser":
+        if getattr(cfg.training, "play_render_mode", "auto") != "interactive":
+            raise ValueError("play_renderer=viser requires play_render_mode=interactive")
+        from importlib.util import find_spec
+
+        if find_spec("mjviser") is None:
+            raise ImportError("Viser playback requires the unisim-core[viser] extra")
     rl_cfg = algo_config_dict(cfg)
 
     task_log_root = get_log_root(Path.cwd(), cfg) / str(cfg.training.task_name)
@@ -394,13 +403,25 @@ def play_rsl_rl(cfg: DictConfig, device: str) -> str | None:
         world_size=play_world_size,
         learner_device=device,
     )
+
+    def _create_play_env(n):
+        play_env = create_env(cfg, num_envs=n, env_cfg_override=play_env_cfg_override)
+        try:
+            play_env.resolve_play_render_plan(
+                play_render_mode=getattr(cfg.training, "play_render_mode", "auto"),
+                play_steps=_resolve_play_num_steps(cfg),
+                output_video=Path(load_path_dir) / "play_video.mp4",
+            )
+            if camera.cam_tracking_env_idx >= n:
+                raise ValueError("cam_tracking_env_idx exceeds play_env_num")
+        except BaseException:
+            play_env.close()
+            raise
+        return play_env
+
     session, _policy_obs_mode, _checkpoint_path = create_rsl_rl_playback_session(
         playback_cfg=playback_cfg,
-        env_factory=lambda n: create_env(
-            cfg,
-            num_envs=n,
-            env_cfg_override=play_env_cfg_override,
-        ),
+        env_factory=_create_play_env,
         algo_config=rl_cfg,
         root_dir=Path.cwd(),
         device=device,
@@ -446,7 +467,7 @@ def play_rsl_rl(cfg: DictConfig, device: str) -> str | None:
                 render_offset_mode=str(getattr(env.cfg, "render_offset_mode", "grid")),
                 initialize=session.reset,
                 step=lambda _obs: session.step_once(),
-                camera_kwargs=camera_cfg_from_training(cfg.training),
+                camera_kwargs=camera,
                 on_plan=_log_plan,
                 debug_overlay_getter=_playback_debug_overlay_getter(env),
             )
@@ -666,6 +687,7 @@ def main(cfg: DictConfig) -> None:
                         ),
                     )
                     patch_rsl_rl_action_std_logging(runner)
+                    bind_rsl_rl_environment_state(runner, env, reset=wrapped_env.reset)
 
                     if cfg.algo.load_run != "-1":
                         resume_path, _ = parse_checkpoint_path(cfg, root_dir=Path.cwd())

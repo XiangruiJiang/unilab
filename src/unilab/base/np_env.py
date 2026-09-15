@@ -114,6 +114,19 @@ class NpEnvState:
 class NpEnv(ABEnv):
     """Backend-agnostic numpy environment base class."""
 
+    @property
+    def supports_device_tensors(self) -> bool:
+        return bool(self._backend.supports_device_tensors)
+
+    def device_session(self):
+        """Exclusive tensor physics session for device-native consumers.
+
+        Existing NumPy managers cannot execute inside this context. Callers
+        supply tensor observations/rewards themselves and exit before using
+        normal environment reset/step; backend host caches refresh on exit.
+        """
+        return self._backend.device_session()
+
     def __init__(self, cfg: EnvCfg, backend: SimBackend, num_envs: int):
         # Cold-path process confinement for envs that own an explicit CPU
         # block (multi-rank DP collectors): keeps host-side NumPy/Numba compute

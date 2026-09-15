@@ -654,7 +654,9 @@ class ObservationManager(ManagerBase):
                 # NOTE: This deepcopy is important to avoid cross-group contamination of term
                 # configs.
                 term_cfg = deepcopy(term_cfg)
-                self._resolve_common_term_cfg(term_name, term_cfg)
+                self._resolve_common_term_cfg(
+                    term_name, term_cfg, checkpoint_name=f"{group_name}/{term_name}"
+                )
 
                 if not group_cfg.enable_corruption:
                     term_cfg.noise = None
