@@ -170,7 +170,7 @@ class NpEnv(ABEnv):
     @property
     def observation_space(self) -> gym.Space:
         total = sum(self.obs_groups_spec.values())
-        return gym.spaces.Box(-np.inf, np.inf, shape=(total,), dtype=np.float64)
+        return gym.spaces.Box(-np.inf, np.inf, shape=(total,), dtype=get_global_dtype().type)
 
     def init_state(self) -> NpEnvState:
         dtype = get_global_dtype()

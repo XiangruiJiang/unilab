@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import numpy as np
+import pytest
 
 from unilab.utils.rotation import (
     np_matrix_first_two_cols_from_quat,
@@ -11,6 +12,7 @@ from unilab.utils.rotation import (
     np_quat_apply,
     np_quat_apply_batched,
     np_quat_apply_inverse_batched,
+    np_quat_canonicalize,
     np_quat_ensure_continuity,
     np_quat_error_magnitude,
     np_quat_error_magnitude_batched,
@@ -23,6 +25,61 @@ from unilab.utils.rotation import (
     np_subtract_anchor_frame_transforms,
     np_subtract_frame_transforms,
 )
+
+
+@pytest.mark.parametrize("dtype", [np.float32, np.float64])
+def test_canonicalize_preserves_dtype_signed_zero_and_input(dtype):
+    quaternions = np.array(
+        [[-1.0, 0.0, -0.0, 0.0], [0.0, -0.0, 0.0, 1.0], [-0.0, 0.0, -0.0, -1.0]],
+        dtype=dtype,
+    )
+    original = quaternions.copy()
+    quaternions.setflags(write=False)
+    expected = original * np.where(original[:, :1] < 0.0, -1.0, 1.0)
+    result = np_quat_canonicalize(quaternions)
+    assert result.dtype == dtype
+    assert not np.shares_memory(result, quaternions)
+    np.testing.assert_array_equal(result, expected)
+    np.testing.assert_array_equal(np.signbit(result), np.signbit(expected))
+    np.testing.assert_array_equal(quaternions, original)
+    np.testing.assert_array_equal(np.signbit(quaternions), np.signbit(original))
+    single = np_quat_canonicalize(quaternions[0])
+    assert single.shape == (4,) and single.dtype == dtype
+    np.testing.assert_array_equal(single, expected[0])
+
+
+@pytest.mark.parametrize("dtype", [np.float32, np.float64])
+def test_quaternion_error_float_dtype_broadcast_and_angular_edges(dtype):
+    angles = np.array([-np.pi, -np.pi + 1e-7, -1e-10, 0.0, 1e-10, np.pi - 1e-7, np.pi])
+    target = np.zeros((len(angles), 4), dtype=dtype)
+    target[:, 0] = np.cos(angles / 2)
+    target[:, 3] = np.sin(angles / 2)
+    target = np.concatenate(
+        (target, np.array([[0.0, 1.0, -0.0, 0.0], [-0.0, -1.0, 0.0, -0.0]], dtype=dtype))
+    )
+    target = np.stack((target, -target), axis=0)
+    original = target.copy()
+    target.setflags(write=False)
+    identity = np.array([1.0, 0.0, 0.0, 0.0], dtype=dtype)
+    result = np_quat_error_magnitude_batched(identity, target)
+    assert result.dtype == dtype
+    assert result.shape == target.shape[:-1]
+    expected = np.concatenate((np.abs(angles), [np.pi, np.pi]))
+    np.testing.assert_allclose(
+        result, np.broadcast_to(expected, result.shape), rtol=1e-7, atol=1e-12
+    )
+    np.testing.assert_allclose(result[0], result[1], rtol=0.0, atol=0.0)
+    np.testing.assert_array_equal(target, original)
+    np.testing.assert_array_equal(np.signbit(target), np.signbit(original))
+    assert np_quat_to_axis_angle(target[0]).dtype == dtype
+
+
+def test_quaternion_error_mixed_dtype_follows_promoted_inputs():
+    q1 = np.array([1.0, 0.0, 0.0, 0.0], dtype=np.float32)
+    q2 = np.array([[0.0, 1.0, 0.0, 0.0]], dtype=np.float64)
+    result = np_quat_error_magnitude_batched(q1, q2)
+    assert result.dtype == np.float64
+    np.testing.assert_allclose(result, [np.pi], rtol=1e-15)
 
 
 def _quat_from_axis_angle_z(angle_rad: float) -> np.ndarray:

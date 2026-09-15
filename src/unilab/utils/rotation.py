@@ -73,12 +73,15 @@ def np_quat_conjugate(q: np.ndarray) -> np.ndarray:
 
 
 def np_quat_canonicalize(q: np.ndarray) -> np.ndarray:
-    """Flip quaternion signs so the real part is non-negative."""
+    """Flip quaternion signs without mutating input or promoting floating dtypes."""
     q_was_1d = q.ndim == 1
     if q_was_1d:
         q = q[None, :]
 
-    sign = np.where(q[:, 0:1] < 0.0, -1.0, 1.0)
+    # Scalar-only np.where branches otherwise create float64 even for float32
+    # quaternions. Keep the existing float64 result for integer inputs.
+    sign_dtype = q.dtype if np.issubdtype(q.dtype, np.floating) else np.dtype(np.float64)
+    sign = np.where(q[:, 0:1] < 0.0, sign_dtype.type(-1.0), sign_dtype.type(1.0))
     result = q * sign
     canonical: np.ndarray = result[0] if q_was_1d else result
     return canonical
@@ -312,12 +315,13 @@ def np_quat_error_magnitude(q1: np.ndarray, q2: np.ndarray) -> np.ndarray:
 
 
 def np_quat_error_magnitude_batched(q1: np.ndarray, q2: np.ndarray) -> np.ndarray:
-    """Angular error magnitude for broadcast-compatible quaternions (..., 4)."""
+    """Angular error for broadcast-compatible quaternions, preserving floating dtype."""
     q_rel = np_quat_mul_batched(q2, np_quat_conjugate_batched(q1))
-    sign = np.where(q_rel[..., 0:1] < 0.0, -1.0, 1.0)
-    q_rel = q_rel * sign
+    # The imaginary norm is sign-invariant; canonicalize only the real part.
+    # Array-valued branches preserve dtype and retain the previous -0.0 behavior.
     xyz_norm = np.linalg.norm(q_rel[..., 1:], axis=-1)
-    w = np.clip(q_rel[..., 0], -1.0, 1.0)
+    real = q_rel[..., 0]
+    w = np.clip(np.where(real < 0.0, -real, real), -1.0, 1.0)
     return 2.0 * np.arctan2(xyz_norm, w)
 
 

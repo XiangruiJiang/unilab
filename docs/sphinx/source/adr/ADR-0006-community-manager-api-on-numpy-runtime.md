@@ -321,6 +321,12 @@ Apache-2.0 和 UniLab 的修改类别。实现 PR 分别报告：
 
 ## Evidence In Repo
 
+数值类型沿用各层的职责：默认策略观测与环境缓冲为 float32，`observation_space`
+使用相同 dtype；后端发布的 float64 物理数据不在 entity 层统一降精度。四元数
+canonicalization 与角误差运算保留 float32/float64 输入的计算类型，避免仅用于选择
+正负号的 `np.where` 标量分支把 float32 中间量提升为 float64。混合精度输入遵循
+NumPy 的类型提升规则；整数索引、计数器、布尔标志及 checkpoint 数组契约保持原样。
+
 - Env contract: `src/unilab/base/np_env.py`
 - Backend contract: `unisim.backend.base`
 - Scene config owner: `src/unilab/base/scene.py`

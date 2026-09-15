@@ -283,6 +283,14 @@ class TestNpEnvObsSpec:
         assert np.all(space.low == -np.inf)
         assert np.all(space.high == np.inf)
 
+    def test_observation_space_uses_runtime_dtype(self):
+        from unilab.dtype_config import get_global_dtype
+
+        env = _StubNpEnv(num_envs=1)
+        space = cast(gym.spaces.Box, env.observation_space)
+        assert space.dtype == get_global_dtype()
+        assert space.sample().dtype == np.float32
+
     def test_bare_npenv_obs_groups_spec_raises(self):
         """NpEnv.obs_groups_spec raises NotImplementedError if not overridden."""
         # Access the property via the NpEnv class descriptor directly
