@@ -391,22 +391,6 @@ def test_ppo_multi_rank_routes_one_cpu_partition_to_the_env(
     assert override["cpu_ids"] == [8, 24]
 
 
-def test_offpolicy_isaacsim_training_and_eval_use_separate_render_overrides():
-    cfg = _offpolicy_cfg(
-        [
-            "task=g1_walk_flat/isaacsim",
-            "training.play_render_mode=record",
-        ]
-    )
-    mod = _offpolicy()
-
-    training_override = mod.build_offpolicy_env_cfg_override("sac", cfg)
-    play_override = mod.build_offpolicy_play_env_cfg_override("sac", cfg)
-
-    assert "isaacsim_render_mode" not in training_override
-    assert play_override["isaacsim_render_mode"] == "record"
-
-
 def test_ppo_go1_resolved_algo_matches_old_motrix_behavior():
     """Equivalence: PPO Go1 algo hyperparams match pre-refactor motrix values."""
     cfg = _ppo_cfg(["task=go1_joystick_flat/motrix"])

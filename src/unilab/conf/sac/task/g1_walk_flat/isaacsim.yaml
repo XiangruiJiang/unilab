@@ -1,8 +1,7 @@
 # @package _global_
-# IsaacSim SAC owner for the headless Python 3.11 IsaacLab/PhysX subprocess.
-# Policy-defining fields remain inherited from the MuJoCo owner contract;
-# interval randomization and reset-time PD mutation remain explicit fail-closed
-# choices.  Eval injects the render intent before the IsaacSim worker launches.
+# IsaacSim SAC owner for the headless Python 3.12 IsaacLab/PhysX subprocess.
+# Policy-defining fields remain inherited from the MuJoCo owner contract.
+# Playback replays physics snapshots through the offline MuJoCo renderer.
 defaults:
   - /task/g1_walk_flat/base
   - _self_
@@ -23,8 +22,6 @@ algo:
 env:
   isaacsim_device_id: 0
   isaacsim_worker_timeout_s: 120.0
-  isaacsim_render_width: 1280
-  isaacsim_render_height: 720
   events:
     pd_gains: null
 play_profile:

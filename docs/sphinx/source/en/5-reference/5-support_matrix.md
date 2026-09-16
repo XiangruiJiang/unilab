@@ -10,8 +10,8 @@ in English. Do not infer support beyond the evidence grade shown below.
 - The default backend is `mujoco`.
 - Switch to Motrix with `--sim motrix` on the unified CLI.
 - Switch to IsaacSim with `--sim isaacsim` on the unified CLI. IsaacSim runs
-  headless physics in an external Python 3.11 worker; its owner scope is
-  currently limited to the configured G1 walk-flat PPO/SAC paths.
+  PhysX in an external Python 3.12 IsaacSim 6 / IsaacLab 3 worker; its owner
+  scope is currently limited to the configured G1 walk-flat PPO/SAC paths.
 - `--sim mjwarp` has completed training validation only on the `g1_walk_flat`
   host adapter, where PPO (torch) and SAC (torch) are Tested; other
   entrypoints follow the matrix below, and using it requires installing the
@@ -29,9 +29,9 @@ in English. Do not infer support beyond the evidence grade shown below.
   routes to the MuJoCo interactive viewer (mjwarp runs the physics while
   MuJoCo renders env[0], forced to a single env); `auto` and native renderers
   are not supported.
-- `isaacsim`: headless physics only. Interactive GUI, camera capture, native
-  playback, and video recording are fail-closed for the current IsaacSim 5.1 /
-  IsaacLab v2.3.0 worker profile.
+- `isaacsim`: explicit, finite-step `record` and `interactive` replay physics
+  snapshots through the MuJoCo renderer, like `mjwarp`; the worker never
+  renders.
 - `--render-mode record`: MuJoCo, mjwarp, and Motrix all record a video only.
 - `--render-mode none`: no playback.
 
@@ -67,12 +67,14 @@ so rows do not auto-promote to `Benchmarked`. There is also no separate
 recommendation metadata in the repo, so rows do not auto-promote to
 `Recommended`.
 
-`isaacsim` is a Python 3.11 subprocess backend. Its bounded materialization
-and headless-physics smoke evidence is intentionally not promoted to `Tested`:
-the G1 PPO/SAC cells below are `Configured`, while APPO/TD3/FlashSAC remain
-`Registered`. Do not label these cells `Tested` until a maintainer records full
-training evidence. Contact-force sensors, domain randomization, and all native
-rendering/playback paths remain unsupported.
+`isaacsim` is a Python 3.12 IsaacSim 6 / IsaacLab 3 (PhysX) subprocess
+backend. The host compiles the MJCF contract with MuJoCo and rejects features
+PhysX cannot express at construction; the worker authors USD from it and
+supports fixed variants, contact sensors, mass/COM/inertia/armature/friction/
+kp/kd reset randomization and interval wrenches. The G1 PPO/SAC cells below are
+`Configured`, while APPO/TD3/FlashSAC remain `Registered`. Do not label these
+cells `Tested` until a maintainer records full training evidence. Playback
+replays physics snapshots through the MuJoCo renderer, like `mjwarp`.
 
 ## Entrypoint x Task Owner
 

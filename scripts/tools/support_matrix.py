@@ -55,10 +55,10 @@ _MAINTAINER_VALIDATED_GENESIS_ENTRYPOINT_TASKS: frozenset[tuple[str, str]] = fro
     }
 )
 
-# IsaacSim is a Python 3.11 worker integration with eval-owned Kit viewer and
-# RGB camera protocol coverage. No full training or successful real playback
-# validation is promoted here: the checked-in evidence remains owner/config,
-# protocol tests, and bounded backend smoke coverage.
+# IsaacSim is a Python 3.12 IsaacSim 6 / IsaacLab 3 worker integration whose
+# playback replays physics snapshots through the MuJoCo renderer. No full
+# training validation is promoted here: the checked-in evidence remains
+# owner/config and host-side contract coverage.
 _MAINTAINER_VALIDATED_ISAACSIM_ENTRYPOINT_TASKS: frozenset[tuple[str, str]] = frozenset()
 
 # Maintainer-confirmed completed training validations for the newton
@@ -399,12 +399,11 @@ def render_support_matrix(root: Path | None = None) -> str:
         'sensor 为 per-link net-force 阈值近似（非 geom 对 `data="found"`）、`get_geom_friction` 类'
         "绝对摩擦 DR fail-closed（geom 摩擦只有 per-env ratio API）。",
         "",
-        "`isaacsim` 是 IsaacSim 5.1 / IsaacLab v2.3.0 的独立 Python 3.11 子进程后端，当前只接入"
-        " `g1_walk_flat` 的 PPO/SAC owner，矩阵标记为 `Configured`。仓库没有把 bounded headless"
-        " physics smoke 和 mock rendering protocol 覆盖提升为训练或 playback 的 `Tested` 证据。"
-        "eval 已接入 Kit viewer 与 IsaacLab RGB camera；当前真实主机在 RTX renderer 初始化阶段"
-        "崩溃，因此没有成功 playback 证据，也不会生成占位视频。contact-force sensor 和 domain "
-        "randomization 仍保持 fail-closed。",
+        "`isaacsim` 是 IsaacSim 6 / IsaacLab 3 的独立 Python 3.12 子进程后端（PhysX），当前只接入"
+        " `g1_walk_flat` 的 PPO/SAC owner，矩阵标记为 `Configured`。主进程用 MuJoCo 编译 MJCF 契约并"
+        "在构造期拒绝 PhysX 无法表达的特性；worker 据此生成 USD，支持 fixed variant、contact 传感器、"
+        "质量/质心/惯量/armature/摩擦/kp/kd reset 随机化与 interval 力矩。回放与 `mjwarp` 一样通过"
+        " MuJoCo renderer 重放物理快照。",
         "",
         benchmark_note,
         recommendation_note,
@@ -436,7 +435,7 @@ def render_support_matrix(root: Path | None = None) -> str:
             "- Validated mjwarp entrypoints are explicitly recorded in `_MAINTAINER_VALIDATED_MJWARP_ENTRYPOINT_TASKS`; near-risk coverage lives in `tests/base/test_mjwarp_backend.py`, `tests/base/test_backend_conformance.py`, `tests/base/test_mjwarp_differential.py`, and `tests/base/test_mjwarp_playback.py`.",
             "- Validated isaacgym entrypoints are explicitly recorded in `_MAINTAINER_VALIDATED_ISAACGYM_ENTRYPOINT_TASKS` (real hardware via the external Python 3.8 worker runtime; not covered by repo CI).",
             "- Validated genesis entrypoints are explicitly recorded in `_MAINTAINER_VALIDATED_GENESIS_ENTRYPOINT_TASKS` (real hardware, genesis-world extra + CUDA; not covered by repo CI); near-risk coverage lives in `tests/base/test_genesis_backend.py` (fake runtime), `tests/base/test_genesis_runtime.py` (real-runtime slow lane), and the genesis env smoke in `tests/envs/locomotion/g1/test_g1_owner_contract.py`.",
-            "- IsaacSim owner scope is intentionally not promoted to `Tested`; `_MAINTAINER_VALIDATED_ISAACSIM_ENTRYPOINT_TASKS` is empty until a maintainer records full training evidence. Rendering protocol coverage lives in `tests/base/test_isaacsim_backend.py`; it is not a substitute for successful real playback.",
+            "- IsaacSim owner scope is intentionally not promoted to `Tested`; `_MAINTAINER_VALIDATED_ISAACSIM_ENTRYPOINT_TASKS` is empty until a maintainer records full training evidence. Host-side contract coverage lives in `tests/base/test_isaacsim_backend.py` and UniSim's `tests/adapters/isaacsim`.",
             "- `newton` is an optional owner backed by Newton 1.5.1 and the MuJoCo-Warp 3.11 / Warp 1.16 line, which it shares with the `mujoco` / `mjwarp` extras (jointly installable in one environment). Validated newton entrypoints are explicitly recorded in `_MAINTAINER_VALIDATED_NEWTON_ENTRYPOINT_TASKS` (real hardware, newton extra + CUDA; not covered by repo CI); remaining cells rely on the G1 PPO/SAC owner configs, compose/contract checks, and fail-closed runtime/import boundaries. Native ViewerGL playback (offscreen record + interactive) is included in the `newton` extra and is the default renderer; an incomplete installation falls back to the MuJoCo snapshot renderer for record and stays fail-closed for interactive playback.",
         ]
     )

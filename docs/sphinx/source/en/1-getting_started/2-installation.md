@@ -178,7 +178,7 @@ uv sync --extra mujoco --extra mjwarp --extra newton
 | SuperDex | `uv sync --extra superdex` | Published wheels support Linux x86_64 with CPython 3.12/3.13 only; FR3 assets download from Hugging Face on first use (`SUPERDEX_ASSETS_PATH` overrides with a local checkout) |
 | Drake | `make setup-drake` | C++20, Eigen/fmt/spdlog, and an existing Drake prefix or the script's download path |
 | IsaacGym | `bash scripts/tools/setup_isaacgym_env.sh` | Linux x86_64, NVIDIA driver, and a separate Python 3.8 worker environment |
-| IsaacSim | `bash scripts/tools/setup_isaacsim_env.sh` | Linux x86_64, NVIDIA CUDA, a separate Python 3.11 worker, and Kit EULA acceptance |
+| IsaacSim | `bash scripts/tools/setup_isaacsim_env.sh` | Linux x86_64, NVIDIA CUDA, a separate Python 3.12 IsaacSim 6 / IsaacLab 3 worker, and Kit EULA acceptance |
 
 The Drake, IsaacGym, and IsaacSim setup scripts install their external runtime
 outside the repository and can be re-run safely. They do not install the

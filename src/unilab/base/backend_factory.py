@@ -66,9 +66,6 @@ def env_backend_kwargs(cfg: "EnvCfg") -> dict[str, Any]:
         "isaacgym_worker_timeout_s": cfg.isaacgym_worker_timeout_s,
         "isaacsim_device_id": cfg.isaacsim_device_id,
         "isaacsim_worker_timeout_s": cfg.isaacsim_worker_timeout_s,
-        "isaacsim_render_mode": cfg.isaacsim_render_mode,
-        "isaacsim_render_width": cfg.isaacsim_render_width,
-        "isaacsim_render_height": cfg.isaacsim_render_height,
     }
     # Keep the optional key absent for legacy unisim-core releases that do not
     # know about Genesis' explicit device argument.  Once a rank selects a

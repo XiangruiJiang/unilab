@@ -89,16 +89,11 @@ class EnvCfg:
     genesis_constraint_solver: Optional[str] = None
     genesis_friction_cone: Optional[str] = None
     genesis_solver_iterations: Optional[int] = None
-    # ``isaacsim`` runs IsaacLab/PhysX in a dedicated Python 3.11 worker.
+    # ``isaacsim`` runs IsaacLab/PhysX in a dedicated Python 3.12 worker.
     # Keep its knobs separate from IsaacGym because the two runtimes have
-    # incompatible interpreters and installation roots.  The render intent is
-    # populated only by play/eval config materialization; training leaves it
-    # unset so the worker stays on the cheap headless experience.
+    # incompatible interpreters and installation roots.
     isaacsim_device_id: Optional[int] = None
     isaacsim_worker_timeout_s: Optional[float] = None
-    isaacsim_render_mode: Optional[str] = None
-    isaacsim_render_width: int = 1280
-    isaacsim_render_height: int = 720
 
     @property
     def max_episode_steps(self) -> Optional[int]:
@@ -241,20 +236,6 @@ class EnvCfg:
                 "isaacsim_worker_timeout_s must be a positive number or None, "
                 f"got {self.isaacsim_worker_timeout_s!r}"
             )
-        if self.isaacsim_render_mode is not None:
-            mode = str(self.isaacsim_render_mode).strip().lower()
-            if mode not in {"auto", "interactive", "record", "none"}:
-                raise ValueError(
-                    "isaacsim_render_mode must be one of auto, interactive, record, none, or None; "
-                    f"got {self.isaacsim_render_mode!r}"
-                )
-            self.isaacsim_render_mode = mode
-        for name, value in (
-            ("isaacsim_render_width", self.isaacsim_render_width),
-            ("isaacsim_render_height", self.isaacsim_render_height),
-        ):
-            if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
-                raise ValueError(f"{name} must be a positive integer, got {value!r}")
         if self.cpu_ids is not None:
             ids = list(self.cpu_ids)
             if not ids:

@@ -21,7 +21,7 @@
 - `mujoco`: `--render-mode auto` 会导出 `play_video.mp4`
 - `motrix`: `--render-mode auto` 会打开交互式 renderer 窗口，不录制视频，不受 `play_steps` 限制
 - `mjwarp`: 默认仅支持显式、有限步数的 `record`，通过 task owner 的 MuJoCo visual model 离线录制；`--render-mode interactive` 路由到 MuJoCo 交互 viewer（mjwarp 跑物理、MuJoCo 渲染 env[0]，强制单 env）；不支持 `auto` 或 native renderer
-- `isaacsim`: `auto` 在有 display 时选择 Kit viewer，否则选择 headless RGB camera；当前真实主机仍有 RTX renderer 初始化 blocker，支持等级保持 `Configured`
+- `isaacsim`: 与 `mjwarp` 一样，显式有限步数的 `record` 和 `interactive` 通过 MuJoCo renderer 重放物理快照；worker 不做渲染
 - `--render-mode record`: MuJoCo、mjwarp、Motrix 和 IsaacSim 都只录制视频
 - `--render-mode none`: 不回放
 
@@ -52,7 +52,7 @@ uv run scripts/generate_support_matrix.py --write
 
 `genesis` 是进程内后端（genesis-world==1.3.3，要求 torch>=2.8 与 CUDA；一进程只允许一次 `gs.init`），当前只接入 `g1_walk_flat` 的 PPO (torch) 与 SAC (torch) owner。SAC cell 标记 `Tested`：真机完整训练验证（5000/5000 iterations，reward/mean 6.5 → 244.8，episode length → 987/1000，10.26M env steps / 224s wall time；run 2026-08-31_23-04-01_genesis）加 model_5000.pt 的 record playback 验证；PPO cell 最高只到 `Configured`（registry + owner YAML + compose/contract 覆盖），不代表训练验证。真机证据另有：env smoke 慢车道测试（`tests/envs/locomotion/g1/test_g1_owner_contract.py`：compose → env 构造 → keyframe reset → 12 步有限稳定 → cleanup，覆盖 ppo 与 sac 两棵树）在装有 CUDA 与 genesis extra 的机器上通过。adapter 的 `materialize()` 幂等且惰性触发（entity 校验在 env 的 materialize 钩子前读取状态 getter；isaacgym 后端同模式）。Genesis 在 import 时丢弃 MJCF 全局 `<option>`，owner YAML 显式重声明 `genesis_integrator=implicitfast`。原生 playback/渲染已接入：`play_render_mode=auto` 在有显示时打开 post-build 挂载的交互 viewer、无显示时降级离屏录制（`record` 写 `play_video.mp4`；`get_physics_state` 快照不声明）。未支持边界：geom 名称契约、terrain spawn 与 height scanner、contact sensor 为 per-link net-force 阈值近似（非 geom 对 `data="found"`）、`get_geom_friction` 类绝对摩擦 DR fail-closed（geom 摩擦只有 per-env ratio API）。
 
-`isaacsim` 是 IsaacSim 5.1 / IsaacLab v2.3.0 的独立 Python 3.11 子进程后端，当前只接入 `g1_walk_flat` 的 PPO/SAC owner，矩阵标记为 `Configured`。仓库没有把 bounded headless physics smoke 和 mock rendering protocol 覆盖提升为训练或 playback 的 `Tested` 证据。eval 已接入 Kit viewer 与 IsaacLab RGB camera；当前真实主机在 RTX renderer 初始化阶段崩溃，因此没有成功 playback 证据，也不会生成占位视频。contact-force sensor 和 domain randomization 仍保持 fail-closed。
+`isaacsim` 是 IsaacSim 6 / IsaacLab 3 的独立 Python 3.12 子进程后端（PhysX），当前只接入 `g1_walk_flat` 的 PPO/SAC owner，矩阵标记为 `Configured`。主进程用 MuJoCo 编译 MJCF 契约并在构造期拒绝 PhysX 无法表达的特性；worker 据此生成 USD，支持 fixed variant、contact 传感器、质量/质心/惯量/armature/摩擦/kp/kd reset 随机化与 interval 力矩。回放与 `mjwarp` 一样通过 MuJoCo renderer 重放物理快照。
 
 未检测到与这些组合绑定的已提交 benchmark manifest，因此当前不会自动提升到 `Benchmarked`。
 仓库中目前也没有单独的 recommendation 元数据，因此当前不会自动提升到 `Recommended`。
@@ -131,6 +131,6 @@ uv run scripts/generate_support_matrix.py --write
 - Validated mjwarp entrypoints are explicitly recorded in `_MAINTAINER_VALIDATED_MJWARP_ENTRYPOINT_TASKS`; near-risk coverage lives in `tests/base/test_mjwarp_backend.py`, `tests/base/test_backend_conformance.py`, `tests/base/test_mjwarp_differential.py`, and `tests/base/test_mjwarp_playback.py`.
 - Validated isaacgym entrypoints are explicitly recorded in `_MAINTAINER_VALIDATED_ISAACGYM_ENTRYPOINT_TASKS` (real hardware via the external Python 3.8 worker runtime; not covered by repo CI).
 - Validated genesis entrypoints are explicitly recorded in `_MAINTAINER_VALIDATED_GENESIS_ENTRYPOINT_TASKS` (real hardware, genesis-world extra + CUDA; not covered by repo CI); near-risk coverage lives in `tests/base/test_genesis_backend.py` (fake runtime), `tests/base/test_genesis_runtime.py` (real-runtime slow lane), and the genesis env smoke in `tests/envs/locomotion/g1/test_g1_owner_contract.py`.
-- IsaacSim owner scope is intentionally not promoted to `Tested`; `_MAINTAINER_VALIDATED_ISAACSIM_ENTRYPOINT_TASKS` is empty until a maintainer records full training evidence. Rendering protocol coverage lives in `tests/base/test_isaacsim_backend.py`; it is not a substitute for successful real playback.
+- IsaacSim owner scope is intentionally not promoted to `Tested`; `_MAINTAINER_VALIDATED_ISAACSIM_ENTRYPOINT_TASKS` is empty until a maintainer records full training evidence. Host-side contract coverage lives in `tests/base/test_isaacsim_backend.py` and UniSim's `tests/adapters/isaacsim`.
 - `newton` is an optional owner backed by Newton 1.5.1 and the MuJoCo-Warp 3.11 / Warp 1.16 line, which it shares with the `mujoco` / `mjwarp` extras (jointly installable in one environment). Validated newton entrypoints are explicitly recorded in `_MAINTAINER_VALIDATED_NEWTON_ENTRYPOINT_TASKS` (real hardware, newton extra + CUDA; not covered by repo CI); remaining cells rely on the G1 PPO/SAC owner configs, compose/contract checks, and fail-closed runtime/import boundaries. Native ViewerGL playback (offscreen record + interactive) is included in the `newton` extra and is the default renderer; an incomplete installation falls back to the MuJoCo snapshot renderer for record and stays fail-closed for interactive playback.
 <!-- END GENERATED SUPPORT MATRIX -->

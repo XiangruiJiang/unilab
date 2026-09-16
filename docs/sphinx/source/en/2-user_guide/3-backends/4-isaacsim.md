@@ -1,126 +1,92 @@
 # IsaacSim Backend
 
-UniLab's `isaacsim` backend runs IsaacSim 5.1.0 and IsaacLab v2.3.0 in a
-dedicated Python 3.11 worker process. The host process keeps the regular
-`SimBackend` NumPy contract; pipe messages carry lifecycle commands and shared
-memory carries batched state. The current support boundary is headless physics
-plus eval-owned native rendering for the registered G1 flat task owners. The
-support matrix intentionally marks the PPO and SAC owners as `Configured`, not
-`Tested`, because the rendering protocol is covered by deterministic worker
-tests but has not completed playback on the currently available IsaacSim host.
+UniLab's `isaacsim` backend runs PhysX through IsaacSim 6.0 and IsaacLab 3
+(develop `4ecd0b036da1`) in a dedicated Python 3.12 worker process. The host
+process keeps the regular `SimBackend` NumPy contract with the MuJoCo state
+layout: shared memory carries `qpos`/`qvel`, body frames and contact-sensor data,
+and pipe messages carry lifecycle commands.
 
 ## Runtime boundary
 
-IsaacSim 5.1.0 is installed in a separate Python 3.11 environment because the
-main UniLab environment supports Python 3.10--3.13. The setup entry point is
-`scripts/tools/setup_isaacsim_env.sh`; it installs under
-`$UNISIM_ISAACSIM_HOME` (default `$HOME/.cache/unisim/isaacsim`) and accepts the Kit
-EULA through `OMNI_KIT_ACCEPT_EULA=1` for non-interactive worker startup.
-
-The backend resolves these optional variables without importing Kit in the host
-process:
+IsaacSim 6 requires Python 3.12, so it lives outside the UniLab environment. The
+setup entry point is `scripts/tools/setup_isaacsim_env.sh`; it installs a venv and
+the pinned IsaacLab tree under `$UNISIM_ISAACSIM_HOME` (default
+`$HOME/.cache/unisim/isaacsim`) and runs IsaacLab's own installer, so the Isaac
+Sim, torch and Newton versions pinned by that IsaacLab commit are used.
 
 - `UNISIM_ISAACSIM_HOME` selects the runtime root.
 - `UNISIM_ISAACSIM_PYTHON` overrides the worker interpreter path.
-- The former `UNILAB_ISAACSIM_HOME` and `UNILAB_ISAACSIM_PYTHON` names remain
-  accepted as migration fallbacks.
-- `OMNI_KIT_ACCEPT_EULA=1` keeps worker startup non-interactive.
+- `OMNI_KIT_ACCEPT_EULA=YES` keeps worker startup non-interactive (the adapter
+  sets it for the worker).
 
-The expected runtime layout is
-`$UNISIM_ISAACSIM_HOME/venv/bin/python`, the Python 3.11 site-packages and
-library directories under that venv, and an IsaacLab v2.3.0 source checkout at
-`$UNISIM_ISAACSIM_HOME/IsaacLab`.
+The host needs the `isaacsim` extra of `unisim-core`, which adds MuJoCo.
 
-The render intent is part of the worker's cold `INIT` handshake. Training does
-not inject a render mode and starts the inexpensive headless, camera-disabled
-Kit experience. Eval selects one of these modes before Kit starts:
+## How a scene reaches PhysX
 
-- `auto`: use the interactive Kit viewer when `DISPLAY` or `WAYLAND_DISPLAY`
-  is present; otherwise use headless recording.
-- `interactive`: start non-headless Kit and fail before worker launch when no
-  display variable is present.
-- `record`: start the headless rendering experience with IsaacLab RGB cameras;
-  `training.play_steps` must be finite.
-- `none`: run policy evaluation without a viewer or camera.
+The MJCF scene stays the single source of truth:
 
-The record contract is RGB `(height, width, 3)`, `uint8`, contiguous, and
-non-uniform. Invalid or placeholder frames fail closed instead of producing a
-video. Width and height default to 1280 x 720 in the IsaacSim owner YAML and
-can be overridden through `env.isaacsim_render_width` and
-`env.isaacsim_render_height` before env creation.
+1. The host compiles the scene (and every same-layout fixed variant) with
+   MuJoCo and rejects features PhysX cannot express: equality constraints,
+   tendons, flexes, mocap bodies, ball joints, joint springs, ellipsoid/height
+   field geoms, geom margins, contact dimensions other than 1 or 3, and
+   actuators that are not unit-gear position servos.
+2. MuJoCo weld groups become articulation links. A body with several joints
+   becomes a chain of links with small helper links, and a fixed-base actor gets
+   an anchor link fixed to the world. Free single bodies become rigid objects.
+3. Mass properties, joint frames and limits, armature, `frictionloss` (PhysX
+   joint friction effort), `damping` (viscous joint friction), gravity
+   compensation, colliders and collision filtering (parent/child, `<exclude>`,
+   `contype`/`conaffinity`, explicit pairs) are derived from the compiled model.
+4. MuJoCo resolves friction per geom pair; PhysX per material combine mode. The
+   host chooses the combine-mode assignment with the smallest deviation over all
+   collidable pairs and logs the pairs it cannot reproduce.
 
-The current worker supports MJCF materialization, batched articulation state,
-position-target stepping, masked root/joint resets, a native Kit viewer, and
-headless IsaacLab RGB camera capture. Contact-force sensors, reset or interval
-domain randomization, and host pre-step callbacks remain unsupported and fail
-closed.
+The worker authors one USD layer per variant, references it into every
+environment and binds IsaacLab articulations and rigid objects.
 
-Use the top-level CLI to select the backend and owner:
+## Supported capabilities
+
+- Position-servo control, selected-row resets, fixed model variants
+  (same layout).
+- Reset randomization of body mass, center of mass, inertia, joint armature, geom
+  friction (movable bodies) and kp/kd; interval body forces and torques at body
+  centers of mass.
+- `<contact>` sensors reported per rigid-body pair. A sensor whose geom
+  selection is narrower than the rigid-body report fails closed at construction.
+  After a reset the sensor rows read zero until the next physics step.
+- Frame, gyro, velocimeter and joint sensors computed from the published state.
+
+## Differences from MuJoCo
+
+These are engine boundaries the adapter cannot remove; they are stated here
+rather than hidden behind an approximation:
+
+- **Friction.** MuJoCo resolves friction per geom pair (explicit pair, then
+  priority, then maximum); PhysX resolves it per material combine mode. The
+  compiler reports the pairs it cannot reproduce at construction.
+- **Contact force.** Sensor forces carry the PhysX normal force plus the
+  friction force of the same pair. PhysX anchors friction per body pair rather
+  than per contact point, so a single-contact reduction (`mindist`, `maxforce`)
+  resolves the pair's friction in the contact frame of the contact it selected.
+  Contact magnitudes stay below MuJoCo's: from one identical state a fingertip
+  pair read 0.44 N against MuJoCo's 0.58 N, because PhysX has no equivalent of
+  `solref`/`solimp` contact compliance.
+- **Reset.** Randomized body mass, center of mass and inertia land one physics
+  step late: the first step after a reset still integrates with the values from
+  the previous reset, and every later step uses the new ones. Contact sensors of
+  reset rows read zero until the next physics step, and after a body is
+  teleported PhysX can take up to two steps to report its contacts.
+- **Solver.** PhysX TGS iteration counts come from the MJCF solver iteration
+  budget; MuJoCo's `solref`/`solimp` contact compliance has no PhysX equivalent.
+
+## Playback
+
+The worker never renders. `record` and `interactive` playback replay physics
+snapshots through the MuJoCo renderer, like `mjwarp`, including debug overlays
+such as `ghost_model`:
 
 ```bash
 uv run train --algo ppo --task g1_walk_flat --sim isaacsim
-uv run eval --algo sac --task g1_walk_flat --sim isaacsim \
-  --load-run <run-id> --render-mode record \
-  training.play_steps=120 training.play_env_num=1 training.export_onnx=false
-uv run eval --algo sac --task g1_walk_flat --sim isaacsim \
-  --load-run <run-id> --render-mode interactive training.play_env_num=1
+uv run eval --algo ppo --task g1_walk_flat --sim isaacsim --load-run <run-id> \
+  --render-mode record training.play_steps=300
 ```
-
-Record mode writes `play_video.mp4` in the selected run directory. These
-commands require the external runtime and an NVIDIA CUDA device. The repository
-does not claim completed full training or stable native playback; those claims
-require a maintainer validation entry.
-
-## Current Runtime Validation
-
-A bounded SAC record eval and a bounded interactive eval using an existing
-checkpoint were attempted on IsaacSim 5.1.0, IsaacLab v2.3.0, Kit 107.3.3,
-Ubuntu 24.04.4, an RTX 4090, and NVIDIA driver 595.84. Both paths crashed during
-`AppLauncher` initialization, before camera or viewer creation, with frames in
-`librtx.scenedb.plugin.so`,
-`libcarb.scenerenderer-rtx.plugin.so`, and `libomni.hydra.rtx.plugin.so` after
-EGL initialization warnings. A minimal camera-enabled `AppLauncher` probe also
-failed with `multi_gpu=False`.
-
-This is a runtime blocker, not successful playback evidence. The backend keeps
-the render protocol and its fail-closed tests, while the support matrix remains
-at `Configured`. No placeholder video is generated when the real renderer does
-not initialize.
-
-## Inspecting The Contract
-
-```bash
-VIRTUAL_ENV="$HOME/.cache/unisim/isaacsim/venv" \
-OMNI_KIT_ACCEPT_EULA=1 \
-uv run --active --no-project \
-  scripts/tools/probe_isaacsim_contract.py \
-  --model-file src/unilab/assets/robots/g1/scene_flat.xml \
-  --num-envs 2 --steps 2 --device cuda:0 \
-  --output /tmp/isaacsim-contract.json
-```
-
-The command is a bounded developer probe. It only touches the XML/importer
-during cold-path materialization and is useful for checking a newly installed
-runtime; it is not a training or playback validation.
-
-## Contract matrix
-
-| UniLab contract | IsaacSim/IsaacLab operation | Observed result | Production constraint |
-|---|---|---|---|
-| MJCF scene materialization | `isaaclab.sim.converters.MjcfConverter` | G1 MJCF converts to USD successfully | Enable `isaacsim.asset.importer.mjcf` explicitly in headless workers |
-| Batched articulation | `Articulation` + `ArticulationCfg` | 2 environments, 29 joints, 30 bodies | Resolve names at materialization; importer order is not the MJCF order |
-| Quaternion layout | `robot.data.root_quat_w` / `body_quat_w` | `wxyz` | Keep `wxyz` at the shared-memory boundary |
-| Base angular velocity | `robot.data.root_ang_vel_w` | World frame | Public getter remains world-frame; reset qvel conversion is a cold-path contract operation |
-| Partial reset | `write_root_pose_to_sim`, `write_root_velocity_to_sim`, `write_joint_state_to_sim`, `reset(env_ids)` | Selected row changes; other row deltas are zero | Use masked batched writes; reject duplicate/out-of-range ids |
-| Position control | `set_joint_position_target`, `write_data_to_sim`, `SimulationContext.step` | Target moves the first joint over bounded steps | `step(ctrl)` carries position targets; gains/limits are materialized explicitly |
-| State getter boundary | `Articulation.data.*` tensors | All getters are batched with expected leading dimension | Worker copies tensors to host-owned shared-memory slots; hot getters do not parse assets |
-| Rendering startup | `AppLauncher` cold mode selection | Mock worker verifies none/record/interactive mode, dimensions, and graphics handshake | Mode cannot change after env materialization |
-| Offline RGB | IsaacLab `Camera` + `CameraCfg` | Protocol tests verify video writing and reject bad shape, dtype, or uniform frames; current real host crashes before camera creation | Require finite steps and keep support at `Configured` until real playback succeeds |
-| Interactive viewer | non-headless Kit + `SimulationContext.set_camera_view` | Protocol tests drive a frame and map window close to `RenderClosedError`; current host has no successful bounded GUI evidence | Explicit interactive requires a display; `auto` falls back to record without one |
-| Domain randomization | IsaacLab manager/event APIs | Not exercised | Non-empty unsupported plans must fail closed |
-
-The importer returns a different joint/body ordering (for example, left/right
-branches are interleaved). The worker builds name-to-index maps and reorders
-every state/control array; positional assumptions would violate the
-`SimBackend` index contract. The full owner and capability status is maintained
-in {doc}`../../5-reference/5-support_matrix`.

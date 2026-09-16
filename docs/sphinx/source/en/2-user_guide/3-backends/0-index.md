@@ -33,7 +33,7 @@ YAML; do not switch a run by overriding `training.sim_backend` alone.
 | Genesis | Linux x86_64 | Required: NVIDIA GPU and driver; only the `gs.gpu` channel is validated |
 | Newton | Linux | Required: NVIDIA GPU and CUDA driver; CPU devices are not a validated channel |
 | IsaacGym | Linux x86_64 | Required: NVIDIA GPU and driver; physics runs in a separate Python 3.8 worker |
-| IsaacSim | Linux x86_64 | Required: NVIDIA CUDA; native rendering depends on the RTX driver stack; separate Python 3.11 worker |
+| IsaacSim | Linux x86_64 | Required: NVIDIA CUDA; physics runs in a separate Python 3.12 worker; playback uses MuJoCo snapshots |
 | Drake | Linux x86_64 / Apple Silicon macOS (arm64) | Not required: CPU batch physics; Intel macOS has no official Drake binary |
 
 Backend device requirements are independent of the learner device: CPU-physics

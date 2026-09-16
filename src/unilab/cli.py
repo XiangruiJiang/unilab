@@ -198,7 +198,7 @@ def _check_runtime_requirements(algo: str, sim: str) -> None:
 
         if not isaacsim_runtime_available():
             raise SystemExit(
-                "sim=isaacsim requires the external Python 3.11 IsaacSim/IsaacLab worker "
+                "sim=isaacsim requires the external Python 3.12 IsaacSim/IsaacLab worker "
                 "runtime. Install it with `scripts/tools/setup_isaacsim_env.sh` (see the "
                 "IsaacSim backend docs page)."
             )

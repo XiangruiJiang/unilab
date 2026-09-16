@@ -160,7 +160,7 @@ uv sync --extra mujoco --extra mjwarp --extra newton
 | SuperDex | `uv sync --extra superdex` | 已发布 wheel 仅支持 Linux x86_64、CPython 3.12/3.13；FR3 资产首次使用时自动从 Hugging Face 下载（`SUPERDEX_ASSETS_PATH` 可指定本地 checkout 覆盖） |
 | Drake | `make setup-drake` | C++20、Eigen/fmt/spdlog，以及已有 Drake prefix 或脚本下载路径 |
 | IsaacGym | `bash scripts/tools/setup_isaacgym_env.sh` | Linux x86_64、NVIDIA driver 和独立 Python 3.8 worker 环境 |
-| IsaacSim | `bash scripts/tools/setup_isaacsim_env.sh` | Linux x86_64、NVIDIA CUDA、独立 Python 3.11 worker 和 Kit EULA 接受 |
+| IsaacSim | `bash scripts/tools/setup_isaacsim_env.sh` | Linux x86_64、NVIDIA CUDA、独立 Python 3.12 IsaacSim 6 / IsaacLab 3 worker 和 Kit EULA 接受 |
 
 Drake、IsaacGym 和 IsaacSim 的 setup 脚本会将外部 runtime 安装到仓库之外，并且可以
 安全重复运行；它们不会把外部仿真器装进 UniLab 主环境。runtime 变量、渲染器要求和

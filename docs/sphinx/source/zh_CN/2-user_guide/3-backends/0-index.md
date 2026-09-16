@@ -32,7 +32,7 @@ UniLab 通过 registry/config 路径暴露后端名称，包括在对应 owner �
 | Genesis | Linux x86_64 | 必需：NVIDIA GPU 与驱动；仅 `gs.gpu` 通道经过验证 |
 | Newton | Linux | 必需：NVIDIA GPU 与 CUDA 驱动；CPU 设备不是已验证通道 |
 | IsaacGym | Linux x86_64 | 必需：NVIDIA GPU 与驱动；物理跑在独立 Python 3.8 worker |
-| IsaacSim | Linux x86_64 | 必需：NVIDIA CUDA；原生渲染器依赖 RTX 驱动栈；独立 Python 3.11 worker |
+| IsaacSim | Linux x86_64 | 必需：NVIDIA CUDA；物理跑在独立 Python 3.12 worker；回放使用 MuJoCo 快照 |
 | Drake | Linux x86_64 / Apple Silicon macOS（arm64） | 非必需：CPU 批量物理；Intel macOS 没有官方 Drake 二进制 |
 
 物理后端的设备需求与 learner 设备相互独立：CPU 物理后端（MuJoCo /
